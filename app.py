@@ -3,6 +3,18 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 from tkinter import font as tkfont
 import numpy as np
 import scipy.linalg as la
+import base64
+try:
+	import cairosvg
+	CAIROS, PIL_AVAILABLE = True, False
+except Exception:
+	CAIROS = False
+try:
+	from PIL import Image, ImageTk
+	PIL_AVAILABLE = True
+except Exception:
+	if 'PIL_AVAILABLE' not in globals():
+		PIL_AVAILABLE = False
 import csv
 import json
 import os
@@ -25,6 +37,26 @@ class MatrixApp(tk.Tk):
 		self._build_ui()
 		self._build_icons()
 		self._autosave_setup()
+ 
+	def _ensure_assets_with_embedded_icons(self):
+		assets_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'assets')
+		os.makedirs(assets_dir, exist_ok=True)
+		calc_png = (
+			b"iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAAIElEQVQ4jWNgGAWjgP8ZGBgY/0cQGJiBiYFB"
+			b"QwMDAwMAwAABHkQv4qf3r0AAAAASUVORK5CYII="
+		)
+		clear_png = (
+			b"iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAAPUlEQVQ4jWNgGAXUBv8ZGBgY/v//PwYGBmZg"
+			b"YGBQMAwMDIxA0QGg0EwGgQYjQZg0CwQwAA3mQJgZc6fJwAAAABJRU5ErkJggg=="
+		)
+		calc_path = os.path.join(assets_dir, 'calc.png')
+		clear_path = os.path.join(assets_dir, 'clear.png')
+		if not os.path.exists(calc_path):
+			with open(calc_path, 'wb') as f:
+				f.write(base64.b64decode(calc_png))
+		if not os.path.exists(clear_path):
+			with open(clear_path, 'wb') as f:
+				f.write(base64.b64decode(clear_png))
 
 	def _build_ui(self):
 		container = ttk.Frame(self, padding=(12, 12, 12, 12))
@@ -360,18 +392,47 @@ class MatrixApp(tk.Tk):
 		widget.bind('<FocusOut>', on_focus_out)
 
 	def _build_icons(self):
-		try:
-			img_calc_data = b""  
-			img_clear_data = b""
-			if img_calc_data:
-				self._icon_calc = tk.PhotoImage(data=img_calc_data)
-			if img_clear_data:
-				self._icon_clear = tk.PhotoImage(data=img_clear_data)
-		except Exception:
-			self._icon_calc = None
-			self._icon_clear = None
-		for child in self.winfo_children():
-			pass
+		self._ensure_assets_with_embedded_icons()
+		def load_png(path, size=(18,18)):
+			try:
+				if PIL_AVAILABLE:
+					im = Image.open(path).convert('RGBA')
+					if size:
+						im = im.resize(size, Image.LANCZOS)
+					return ImageTk.PhotoImage(im)
+				return tk.PhotoImage(file=path)
+			except Exception:
+				return None
+		def load_svg(path, size=(18,18)):
+			if not CAIROS:
+				return None
+			try:
+				png_bytes = cairosvg.svg2png(url=path, output_width=size[0], output_height=size[1])
+				if PIL_AVAILABLE:
+					from io import BytesIO
+					im = Image.open(BytesIO(png_bytes)).convert('RGBA')
+					return ImageTk.PhotoImage(im)
+				tmp = os.path.join(os.path.dirname(path), '_tmp_icon.png')
+				with open(tmp, 'wb') as f:
+					f.write(png_bytes)
+				img = tk.PhotoImage(file=tmp)
+				os.remove(tmp)
+				return img
+			except Exception:
+				return None
+		assets_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'assets')
+		calc_png_path = os.path.join(assets_dir, 'calc.png')
+		clear_png_path = os.path.join(assets_dir, 'clear.png')
+		calc_svg_path = os.path.join(assets_dir, 'calc.svg')
+		clear_svg_path = os.path.join(assets_dir, 'clear.svg')
+		self._icon_calc = load_png(calc_png_path) or load_svg(calc_svg_path) or None
+		self._icon_clear = load_png(clear_png_path) or load_svg(clear_svg_path) or None
+		if hasattr(self, 'calc_btn'):
+			if self._icon_calc:
+				self.calc_btn.configure(image=self._icon_calc, compound=tk.LEFT)
+		if hasattr(self, 'clear_btn'):
+			if self._icon_clear:
+				self.clear_btn.configure(image=self._icon_clear, compound=tk.LEFT)
 
 	def _autosave_setup(self):
 		self._autosave_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'last_state.json')
