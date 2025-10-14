@@ -1,0 +1,57 @@
+name: release-windows-exe
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pillow
+
+      - name: Prepare icon
+        shell: pwsh
+        run: |
+          if (Test-Path 'assets/calc.png') {
+            python - << 'PY'
+from PIL import Image
+im = Image.open('assets/calc.png').convert('RGBA')
+sizes = [(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)]
+im.save('assets/calc.ico', sizes=sizes)
+PY
+          }
+
+      - name: Build EXE
+        run: |
+          pyinstaller --noconsole --onefile --name MatrixDesktop --icon assets\calc.ico app.py
+          copy dist\MatrixDesktop.exe RUN.exe
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+
+      - name: Upload RUN.exe
+        uses: softprops/action-gh-release@v2
+        with:
+          files: RUN.exe
+
