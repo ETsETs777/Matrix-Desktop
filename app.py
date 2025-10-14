@@ -1,6 +1,12 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
 from tkinter import font as tkfont
+ 
+try:
+	from tkinterdnd2 import DND_FILES, TkinterDnD
+	DND_AVAILABLE = True
+except Exception:
+	DND_AVAILABLE = False
 import numpy as np
 import scipy.linalg as la
 import base64
@@ -19,7 +25,7 @@ import csv
 import json
 import os
 
-class MatrixApp(tk.Tk):
+class MatrixApp(tk.Tk if not DND_AVAILABLE else TkinterDnD.Tk):
 	def __init__(self):
 		super().__init__()
 		self.title("Matrix Desktop")
@@ -37,6 +43,8 @@ class MatrixApp(tk.Tk):
 		self._build_ui()
 		self._build_icons()
 		self._autosave_setup()
+		self._load_recent()
+		self.after(50, self._snap_half_screen)
  
 	def _ensure_assets_with_embedded_icons(self):
 		assets_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'assets')
@@ -102,13 +110,31 @@ class MatrixApp(tk.Tk):
 		mid = ttk.Frame(container)
 		mid.pack(fill=tk.BOTH, expand=True, pady=12)
 
-		left = ttk.Labelframe(mid, text="Матрица A", padding=(10, 8, 10, 8))
+		left = ttk.Labelframe(mid, text="Матрица A", style="Card.TLabelframe", padding=(10, 8, 10, 8))
 		left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0,6))
-		right = ttk.Labelframe(mid, text="Матрица B / вектор b", padding=(10, 8, 10, 8))
+		right = ttk.Labelframe(mid, text="Матрица B / вектор b", style="Card.TLabelframe", padding=(10, 8, 10, 8))
 		right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(6,0))
+		hist = ttk.Labelframe(mid, text="История", style="Card.TLabelframe", padding=(10,8,10,8))
+		hist.pack(side=tk.LEFT, fill=tk.Y, padx=(6,0))
 
-		self.textA = self._make_scrolled_text(left)
-		self.textB = self._make_scrolled_text(right)
+		self._build_matrix_editor(left, which="A")
+		self._build_matrix_editor(right, which="B")
+
+		self.history_list = tk.Listbox(hist, height=16)
+		self.history_list.pack(fill=tk.BOTH, expand=True)
+		hbtns = ttk.Frame(hist)
+		hbtns.pack(fill=tk.X, pady=(6,0))
+		self.btn_hist_to_A = ttk.Button(hbtns, text="Вставить → A", command=lambda: self._history_apply("A"))
+		self.btn_hist_to_A.pack(side=tk.LEFT)
+		self.btn_hist_to_B = ttk.Button(hbtns, text="Вставить → B", command=lambda: self._history_apply("B"))
+		self.btn_hist_to_B.pack(side=tk.LEFT, padx=6)
+		self.history_list.bind('<Double-Button-1>', lambda e: self._history_apply("A"))
+		self._hist_menu = tk.Menu(self, tearoff=0)
+		self._hist_menu.add_command(label="Вставить в A", command=lambda: self._history_apply("A"))
+		self._hist_menu.add_command(label="Вставить в B", command=lambda: self._history_apply("B"))
+		self._hist_menu.add_separator()
+		self._hist_menu.add_command(label="Копировать", command=self._history_copy)
+		self.history_list.bind('<Button-3>', self._history_context)
 		self._set_placeholder(self.textA, "Пример:\n1 2 3\n4 5 6")
 		self._set_placeholder(self.textB, "Пример:\n9 8 7\n6 5 4")
 		self._add_tooltip(self.textA, "Матрица A: числа разделяйте пробелом/запятой/точкой с запятой")
@@ -123,10 +149,14 @@ class MatrixApp(tk.Tk):
 		info = ttk.Label(btns, text="Ctrl+Enter — вычислить, Ctrl+L — очистить", style="Help.TLabel")
 		info.pack(side=tk.RIGHT)
 
-		out = ttk.Labelframe(container, text="Результат", padding=(10, 8, 10, 8))
+		out = ttk.Labelframe(container, text="Результат", style="Card.TLabelframe", padding=(10, 8, 10, 8))
 		out.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
 		self.result = self._make_scrolled_text(out)
 		self.result.configure(state=tk.DISABLED)
+
+		notes_box = ttk.Labelframe(container, text="Заметки", style="Card.TLabelframe", padding=(10, 8, 10, 8))
+		notes_box.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
+		self.notes = self._make_scrolled_text(notes_box)
 
 		self.status = ttk.Label(self, text="Готово", anchor=tk.W, style="Status.TLabel")
 		self.status.pack(fill=tk.X, side=tk.BOTTOM)
@@ -153,6 +183,223 @@ class MatrixApp(tk.Tk):
 		outer.rowconfigure(0, weight=1)
 		self._attach_focus_animation(txt)
 		return txt
+
+	def _build_matrix_editor(self, parent, which="A"):
+		wrap = ttk.Frame(parent)
+		wrap.pack(fill=tk.BOTH, expand=True)
+		toolbar = ttk.Frame(wrap)
+		toolbar.pack(fill=tk.X)
+		add_row = ttk.Button(toolbar, text="+R", width=4, command=lambda: self._grid_add_row(which))
+		add_row.pack(side=tk.LEFT)
+		add_col = ttk.Button(toolbar, text="+C", width=4, command=lambda: self._grid_add_col(which))
+		add_col.pack(side=tk.LEFT, padx=4)
+		del_row = ttk.Button(toolbar, text="-R", width=4, command=lambda: self._grid_del_row(which))
+		del_row.pack(side=tk.LEFT)
+		del_col = ttk.Button(toolbar, text="-C", width=4, command=lambda: self._grid_del_col(which))
+		del_col.pack(side=tk.LEFT, padx=4)
+		mode = ttk.Button(toolbar, text="Текст", width=8, command=lambda: self._toggle_editor_mode(which))
+		mode.pack(side=tk.RIGHT)
+
+		container = ttk.Frame(wrap)
+		container.pack(fill=tk.BOTH, expand=True)
+		tree = ttk.Treeview(container, show="headings", selectmode="browse")
+		tree.grid(row=0, column=0, sticky="nsew")
+		vs = ttk.Scrollbar(container, orient=tk.VERTICAL, command=tree.yview)
+		vs.grid(row=0, column=1, sticky="ns")
+		hs = ttk.Scrollbar(container, orient=tk.HORIZONTAL, command=tree.xview)
+		hs.grid(row=1, column=0, sticky="ew")
+		tree.configure(yscroll=vs.set, xscroll=hs.set)
+		container.columnconfigure(0, weight=1)
+		container.rowconfigure(0, weight=1)
+
+		editor = tk.Entry(container, relief=tk.FLAT)
+		editor.place_forget()
+
+		cols = [f"c{i+1}" for i in range(3)]
+		tree["columns"] = cols
+		for i, col in enumerate(cols):
+			tree.heading(col, text=str(i+1))
+			tree.column(col, width=60, anchor=tk.CENTER)
+		for _ in range(3):
+			tree.insert("", tk.END, values=["0" for _ in cols])
+
+		def begin_edit(event):
+			region = tree.identify("region", event.x, event.y)
+			if region != "cell":
+				return
+			rowid = tree.identify_row(event.y)
+			colid = tree.identify_column(event.x)
+			if not rowid or not colid:
+				return
+			ci = int(colid[1:]) - 1
+			x, y, w, h = tree.bbox(rowid, colid)
+			val = tree.set(rowid, cols[ci])
+			editor.place(x=x+1, y=y+1, width=w-2, height=h-2)
+			editor.delete(0, tk.END)
+			editor.insert(0, val)
+			editor.focus_set()
+			editor.selection_range(0, tk.END)
+			editor._rowid = rowid
+			editor._ci = ci
+
+		def commit_edit(event=None):
+			rowid = getattr(editor, "_rowid", None)
+			ci = getattr(editor, "_ci", None)
+			if rowid is None or ci is None:
+				editor.place_forget()
+				return
+			text = editor.get().strip()
+			ok = True
+			try:
+				float(text)
+			except Exception:
+				ok = False
+				text = "0"
+				self._flash_tree_cell(tree, rowid, cols[ci])
+			tree.set(rowid, cols[ci], text)
+			editor.place_forget()
+			if ok:
+				self._sync_grid_to_text(which)
+
+		def cancel_edit(event=None):
+			editor.place_forget()
+
+		tree.bind("<Double-1>", begin_edit)
+		editor.bind("<Return>", commit_edit)
+		editor.bind("<Escape>", cancel_edit)
+		editor.bind("<FocusOut>", commit_edit)
+
+		if which == "A":
+			self.treeA = tree
+			self.textA = self._make_scrolled_text(parent)
+			self.textA.pack_forget()
+			self._grid_mode_A = True
+			if DND_AVAILABLE:
+				self.drop_target_register(DND_FILES)
+				self.textA.drop_target_register(DND_FILES)
+				self.textA.dnd_bind('<<Drop>>', lambda e: self._on_drop_file(e, target='A'))
+		else:
+			self.treeB = tree
+			self.textB = self._make_scrolled_text(parent)
+			self.textB.pack_forget()
+			self._grid_mode_B = True
+			if DND_AVAILABLE:
+				self.drop_target_register(DND_FILES)
+				self.textB.drop_target_register(DND_FILES)
+				self.textB.dnd_bind('<<Drop>>', lambda e: self._on_drop_file(e, target='B'))
+
+	def _toggle_editor_mode(self, which):
+		if which == "A":
+			self._grid_mode_A = not self._grid_mode_A
+			if self._grid_mode_A:
+				self.textA.pack_forget()
+				self.treeA.master.pack(fill=tk.BOTH, expand=True)
+				self._text_to_grid(which)
+			else:
+				self.treeA.master.pack_forget()
+				self.textA.pack(fill=tk.BOTH, expand=True)
+				self._grid_to_text(which)
+		else:
+			self._grid_mode_B = not self._grid_mode_B
+			if self._grid_mode_B:
+				self.textB.pack_forget()
+				self.treeB.master.pack(fill=tk.BOTH, expand=True)
+				self._text_to_grid(which)
+			else:
+				self.treeB.master.pack_forget()
+				self.textB.pack(fill=tk.BOTH, expand=True)
+				self._grid_to_text(which)
+
+	def _grid_add_row(self, which):
+		tree = self.treeA if which == "A" else self.treeB
+		cols = tree["columns"]
+		tree.insert("", tk.END, values=["0" for _ in cols])
+		self._sync_grid_to_text(which)
+
+	def _grid_del_row(self, which):
+		tree = self.treeA if which == "A" else self.treeB
+		cur = tree.selection()
+		if not cur:
+			return
+		tree.delete(cur[0])
+		self._sync_grid_to_text(which)
+
+	def _grid_add_col(self, which):
+		tree = self.treeA if which == "A" else self.treeB
+		cols = list(tree["columns"]) + [f"c{len(tree['columns'])+1}"]
+		tree["columns"] = cols
+		for i, col in enumerate(cols):
+			tree.heading(col, text=str(i+1))
+			tree.column(col, width=60, anchor=tk.CENTER)
+		for iid in tree.get_children(""):
+			vals = list(tree.item(iid, "values"))
+			vals.append("0")
+			tree.item(iid, values=vals)
+		self._sync_grid_to_text(which)
+
+	def _grid_del_col(self, which):
+		tree = self.treeA if which == "A" else self.treeB
+		cols = list(tree["columns"])
+		if len(cols) <= 1:
+			return
+		cols.pop()
+		tree["columns"] = cols
+		for i, col in enumerate(cols):
+			tree.heading(col, text=str(i+1))
+			tree.column(col, width=60, anchor=tk.CENTER)
+		for iid in tree.get_children(""):
+			vals = list(tree.item(iid, "values"))
+			if vals:
+				vals.pop()
+				tree.item(iid, values=vals)
+		self._sync_grid_to_text(which)
+
+	def _flash_tree_cell(self, tree, rowid, colname):
+		orig = tree.tag_has("error")
+		vals = list(tree.item(rowid, "values"))
+		idx = list(tree["columns"]).index(colname)
+		vals[idx] = vals[idx]
+		tree.item(rowid, values=vals, tags=("error",))
+		tree.tag_configure("error", background="#FEE2E2")
+		self.after(600, lambda: tree.item(rowid, values=vals, tags=()))
+
+	def _sync_grid_to_text(self, which):
+		tree = self.treeA if which == "A" else self.treeB
+		lines = []
+		for iid in tree.get_children(""):
+			vals = tree.item(iid, "values")
+			lines.append(" ".join(str(v) for v in vals))
+		text = "\n".join(lines)
+		if which == "A":
+			self.textA.delete("1.0", tk.END)
+			self.textA.insert("1.0", text)
+		else:
+			self.textB.delete("1.0", tk.END)
+			self.textB.insert("1.0", text)
+
+	def _text_to_grid(self, which):
+		tree = self.treeA if which == "A" else self.treeB
+		text = self.textA.get("1.0", tk.END) if which == "A" else self.textB.get("1.0", tk.END)
+		rows = [r.strip() for r in text.strip().splitlines() if r.strip()]
+		if not rows:
+			return
+		data = []
+		for r in rows:
+			parts = [p for p in r.replace(";", " ").replace(",", " ").split() if p]
+			data.append(parts)
+		cols = max((len(r) for r in data), default=0)
+		if cols == 0:
+			return
+		colnames = [f"c{i+1}" for i in range(cols)]
+		tree["columns"] = colnames
+		for i, col in enumerate(colnames):
+			tree.heading(col, text=str(i+1))
+			tree.column(col, width=60, anchor=tk.CENTER)
+		for iid in tree.get_children(""):
+			tree.delete(iid)
+		for row in data:
+			filled = row + ["0"] * (cols - len(row))
+			tree.insert("", tk.END, values=filled)
 
 	def _mono_font(self):
 		return tkfont.Font(family="Consolas", size=self._ui_font_size)
@@ -210,6 +457,9 @@ class MatrixApp(tk.Tk):
 		filem.add_command(label="Экспорт результата в LaTeX", command=self._export_latex)
 		filem.add_command(label="Копировать результат", command=self._copy_result)
 		filem.add_command(label="Копировать результат как таблицу", command=self._copy_result_tsv)
+		filem.add_separator()
+		self._recent_menu = tk.Menu(filem, tearoff=0)
+		filem.add_cascade(label="Последние", menu=self._recent_menu)
 		filem.add_separator()
 		filem.add_command(label="Выход", command=self.destroy)
 		menubar.add_cascade(label="Файл", menu=filem)
@@ -376,6 +626,12 @@ class MatrixApp(tk.Tk):
 		widget.bind('<FocusIn>', on_focus_in)
 		widget.bind('<FocusOut>', on_focus_out)
 
+	def _snap_half_screen(self):
+		try:
+			self.state('zoomed')
+		except Exception:
+			pass
+
 	def _build_icons(self):
 		self._ensure_assets_with_embedded_icons()
 		def load_png(path, size=(18,18)):
@@ -468,12 +724,83 @@ class MatrixApp(tk.Tk):
 	def _prefs_path(self):
 		return os.path.join(os.path.abspath(os.path.dirname(__file__)), "settings.json")
 
+	def _recent_path(self):
+		return os.path.join(os.path.abspath(os.path.dirname(__file__)), "recent.json")
+
+	def _load_recent(self):
+		try:
+			with open(self._recent_path(), 'r', encoding='utf-8') as f:
+				self._recent = json.load(f)
+		except Exception:
+			self._recent = []
+		self._rebuild_recent_menu()
+
+	def _save_recent(self):
+		try:
+			with open(self._recent_path(), 'w', encoding='utf-8') as f:
+				json.dump(self._recent[:10], f, ensure_ascii=False, indent=2)
+		except Exception:
+			pass
+
+	def _add_recent(self, path):
+		if not path:
+			return
+		if not isinstance(path, str):
+			return
+		if path in getattr(self, '_recent', []):
+			self._recent.remove(path)
+		self._recent.insert(0, path)
+		self._save_recent()
+		self._rebuild_recent_menu()
+
+	def _rebuild_recent_menu(self):
+		self._recent_menu.delete(0, tk.END)
+		for p in getattr(self, '_recent', [])[:10]:
+			self._recent_menu.add_command(label=p, command=lambda q=p: self._open_recent(q))
+
+	def _open_recent(self, path):
+		if not os.path.exists(path):
+			return
+		if path.lower().endswith('.csv'):
+			self._open_recent_csv(path)
+		elif path.lower().endswith('.json'):
+			self._open_recent_json(path)
+
+	def _open_recent_csv(self, path):
+		rows = []
+		with open(path, newline="", encoding="utf-8") as f:
+			data = f.read()
+			try:
+				dialect = csv.Sniffer().sniff(data)
+				reader = csv.reader(data.splitlines(), dialect)
+			except Exception:
+				reader = csv.reader(data.splitlines(), delimiter=",")
+			for r in reader:
+				if len(r) == 0:
+					continue
+				rows.append(" ".join(v.strip() for v in r))
+		text = "\n".join(rows)
+		self.textA.delete("1.0", tk.END)
+		self.textA.insert("1.0", text)
+
+	def _open_recent_json(self, path):
+		with open(path, "r", encoding="utf-8") as f:
+			obj = json.load(f)
+		if isinstance(obj, dict):
+			if "A" in obj:
+				self.textA.delete("1.0", tk.END)
+				self.textA.insert("1.0", self._format_matrix(np.array(obj["A"], dtype=float)))
+			if "B" in obj:
+				self.textB.delete("1.0", tk.END)
+				self.textB.insert("1.0", self._format_matrix(np.array(obj["B"], dtype=float)))
+
 	def _import_json(self):
 		path = filedialog.askopenfilename(title="Импорт JSON", filetypes=[("JSON", "*.json"), ("All files", "*.*")])
 		if not path:
 			return
 		with open(path, "r", encoding="utf-8") as f:
 			obj = json.load(f)
+		self._add_recent(path)
 		if isinstance(obj, dict):
 			if "A" in obj:
 				self.textA.delete("1.0", tk.END)
@@ -513,6 +840,7 @@ class MatrixApp(tk.Tk):
 		text = self.result.get("1.0", tk.END).strip()
 		if not text:
 			return
+		self._history_add(text)
 		self.clipboard_clear()
 		self.clipboard_append(text)
 		if hasattr(self, "status"):
@@ -557,6 +885,7 @@ class MatrixApp(tk.Tk):
 					continue
 				rows.append(" ".join(v.strip() for v in r))
 		text = "\n".join(rows)
+		self._add_recent(path)
 		if target == "A":
 			self.textA.delete("1.0", tk.END)
 			self.textA.insert("1.0", text)
@@ -590,6 +919,7 @@ class MatrixApp(tk.Tk):
 		text = self.result.get("1.0", tk.END).strip()
 		if not text:
 			return
+		self._history_add(text)
 		lines = [l.strip() for l in text.splitlines() if l.strip()]
 		rows = []
 		for l in lines:
@@ -650,6 +980,7 @@ class MatrixApp(tk.Tk):
 			return
 		text = self._rref_steps_text(M)
 		self._set_result(text)
+		self._history_add(text)
 		if hasattr(self, "status"):
 			self.status.configure(text=f"RREF({which}) выполнено")
 
@@ -689,6 +1020,91 @@ class MatrixApp(tk.Tk):
 			if r >= rows:
 				break
 		return "\n\n".join(lines) if lines else self._format_matrix(R)
+
+	def _history_add(self, text):
+		if not text:
+			return
+		lines = text.strip().splitlines()
+		preview = lines[0] if lines else text.strip()
+		if len(lines) > 1:
+			preview += f" (+{len(lines)-1})"
+		self.history_list.insert(tk.END, preview)
+		self._history_payload = getattr(self, '_history_payload', [])
+		self._history_payload.append(text)
+
+	def _history_apply(self, target):
+		idx = self.history_list.curselection()
+		if not idx:
+			return
+		text = self._history_payload[idx[0]] if 0 <= idx[0] < len(self._history_payload) else ""
+		if not text:
+			return
+		if target == 'A':
+			self.textA.delete('1.0', tk.END)
+			self.textA.insert('1.0', text)
+			self._text_to_grid('A')
+		else:
+			self.textB.delete('1.0', tk.END)
+			self.textB.insert('1.0', text)
+			self._text_to_grid('B')
+
+	def _history_copy(self):
+		idx = self.history_list.curselection()
+		if not idx:
+			return
+		text = self._history_payload[idx[0]] if 0 <= idx[0] < len(self._history_payload) else ""
+		if not text:
+			return
+		self.clipboard_clear()
+		self.clipboard_append(text)
+		if hasattr(self, "status"):
+			self.status.configure(text="История: скопировано")
+
+	def _history_context(self, event):
+		try:
+			self.history_list.selection_clear(0, tk.END)
+			self.history_list.selection_set(self.history_list.nearest(event.y))
+			self._hist_menu.tk_popup(event.x_root, event.y_root)
+		finally:
+			self._hist_menu.grab_release()
+
+	def _on_drop_file(self, event, target='A'):
+		try:
+			path = event.data.strip().strip('{}')
+			if path.lower().endswith('.csv'):
+				rows = []
+				with open(path, newline="", encoding="utf-8") as f:
+					data = f.read()
+					try:
+						dialect = csv.Sniffer().sniff(data)
+						reader = csv.reader(data.splitlines(), dialect)
+					except Exception:
+						reader = csv.reader(data.splitlines(), delimiter=',')
+					for r in reader:
+						if len(r) == 0:
+							continue
+						rows.append(' '.join(v.strip() for v in r))
+				text = '\n'.join(rows)
+			elif path.lower().endswith('.json'):
+				with open(path, 'r', encoding='utf-8') as f:
+					obj = json.load(f)
+					if isinstance(obj, dict) and target in ('A','B'):
+						text = self._format_matrix(np.array(obj.get(target, []), dtype=float))
+					else:
+						text = ''
+			else:
+				return
+			if target == 'A':
+				self.textA.delete('1.0', tk.END)
+				self.textA.insert('1.0', text)
+				self._text_to_grid('A')
+			else:
+				self.textB.delete('1.0', tk.END)
+				self.textB.insert('1.0', text)
+				self._text_to_grid('B')
+			self._add_recent(path)
+		except Exception:
+			pass
 
 	def on_clear(self):
 		self._push_history()
@@ -791,6 +1207,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(self._format_matrix(res))
 				if hasattr(self, "status"):
 					self.status.configure(text="Выполнено: операция над матрицами")
+				self._history_add(self._format_matrix(res))
 				return
 
 			if op == "transposeA":
@@ -799,6 +1216,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(self._format_matrix(A.T))
 				if hasattr(self, "status"):
 					self.status.configure(text="Выполнено: A^T")
+				self._history_add(self._format_matrix(A.T))
 				return
 			if op == "transposeB":
 				if B_or_b is None:
@@ -806,6 +1224,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(self._format_matrix(B_or_b.T))
 				if hasattr(self, "status"):
 					self.status.configure(text="Выполнено: B^T")
+				self._history_add(self._format_matrix(B_or_b.T))
 				return
 
 			if op == "detA":
@@ -815,6 +1234,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(f"det(A) = {val:g}")
 				if hasattr(self, "status"):
 					self.status.configure(text="Выполнено: det(A)")
+				self._history_add(f"det(A) = {val:g}")
 				return
 			if op == "detB":
 				if B_or_b is None:
@@ -823,6 +1243,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(f"det(B) = {val:g}")
 				if hasattr(self, "status"):
 					self.status.configure(text="Выполнено: det(B)")
+				self._history_add(f"det(B) = {val:g}")
 				return
 
 			if op == "rankA":
@@ -832,6 +1253,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(f"rank(A) = {val}")
 				if hasattr(self, "status"):
 					self.status.configure(text="Выполнено: rank(A)")
+				self._history_add(f"rank(A) = {val}")
 				return
 			if op == "rankB":
 				if B_or_b is None:
@@ -840,6 +1262,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(f"rank(B) = {val}")
 				if hasattr(self, "status"):
 					self.status.configure(text="Выполнено: rank(B)")
+				self._history_add(f"rank(B) = {val}")
 				return
 
 			if op == "invA":
@@ -849,6 +1272,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(self._format_matrix(res))
 				if hasattr(self, "status"):
 					self.status.configure(text="Выполнено: A^{-1}")
+				self._history_add(self._format_matrix(res))
 				return
 			if op == "invB":
 				if B_or_b is None:
@@ -857,6 +1281,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(self._format_matrix(res))
 				if hasattr(self, "status"):
 					self.status.configure(text="Выполнено: B^{-1}")
+				self._history_add(self._format_matrix(res))
 				return
 
 			if op == "solve":
@@ -873,6 +1298,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(self._format_matrix(res))
 				if hasattr(self, "status"):
 					self.status.configure(text="Выполнено: Ax=b")
+				self._history_add(self._format_matrix(res))
 				return
 
 			if op in ("eigA", "eigB"):
@@ -885,6 +1311,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(text)
 				if hasattr(self, "status"):
 					self.status.configure(text=f"Выполнено: eig({name})")
+				self._history_add(text)
 				return
 
 			if op in ("svdA", "svdB"):
@@ -897,6 +1324,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(text)
 				if hasattr(self, "status"):
 					self.status.configure(text=f"Выполнено: SVD({name})")
+				self._history_add(text)
 				return
 
 			if op in ("luA", "luB"):
@@ -909,6 +1337,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(text)
 				if hasattr(self, "status"):
 					self.status.configure(text=f"Выполнено: LU({name})")
+				self._history_add(text)
 				return
 
 			if op in ("qrA", "qrB"):
@@ -921,6 +1350,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(text)
 				if hasattr(self, "status"):
 					self.status.configure(text=f"Выполнено: QR({name})")
+				self._history_add(text)
 				return
 
 			if op in ("cholA", "cholB"):
@@ -932,6 +1362,7 @@ class MatrixApp(tk.Tk):
 				self._set_result("L:\n" + self._format_matrix(L))
 				if hasattr(self, "status"):
 					self.status.configure(text=f"Выполнено: Cholesky({name})")
+				self._history_add("L:\n" + self._format_matrix(L))
 				return
 
 			if op in ("pinvA", "pinvB"):
@@ -943,6 +1374,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(self._format_matrix(res))
 				if hasattr(self, "status"):
 					self.status.configure(text=f"Выполнено: pinv({name})")
+				self._history_add(self._format_matrix(res))
 				return
 
 			if op in ("normCondA", "normCondB"):
@@ -962,6 +1394,7 @@ class MatrixApp(tk.Tk):
 				self._set_result(text)
 				if hasattr(self, "status"):
 					self.status.configure(text=f"Выполнено: нормы/cond({name})")
+				self._history_add(text)
 				return
 
 			raise ValueError("Неизвестная операция")
