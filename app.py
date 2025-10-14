@@ -18,6 +18,8 @@ class MatrixApp(tk.Tk):
 		self.dark_mode = tk.BooleanVar(value=True)
 		self._load_prefs()
 		self._apply_theme()
+		self._history = []
+		self._future = []
 		self._build_menu()
 		self._build_ui()
 
@@ -97,6 +99,8 @@ class MatrixApp(tk.Tk):
 		self.bind_all("<Control-Return>", lambda e: self.on_calculate())
 		self.bind_all("<Control-Return>", lambda e: self.on_calculate())
 		self.bind_all("<Control-l>", lambda e: self.on_clear())
+		self.bind_all("<Control-z>", lambda e: self._undo())
+		self.bind_all("<Control-y>", lambda e: self._redo())
 
 		self._apply_text_colors()
 
@@ -140,6 +144,11 @@ class MatrixApp(tk.Tk):
 		matm.add_command(label="RREF(A) с шагами", command=lambda: self._do_rref("A"))
 		matm.add_command(label="RREF(B) с шагами", command=lambda: self._do_rref("B"))
 		menubar.add_cascade(label="Матрицы", menu=matm)
+
+		editm = tk.Menu(menubar, tearoff=0)
+		editm.add_command(label="Отменить (Ctrl+Z)", command=self._undo)
+		editm.add_command(label="Повторить (Ctrl+Y)", command=self._redo)
+		menubar.add_cascade(label="Правка", menu=editm)
 
 		view = tk.Menu(menubar, tearoff=0)
 		view.add_checkbutton(label="Тёмная тема", onvalue=True, offvalue=False, variable=self.dark_mode, command=self._on_toggle_theme)
@@ -422,6 +431,7 @@ class MatrixApp(tk.Tk):
 		return "\n\n".join(lines) if lines else self._format_matrix(R)
 
 	def on_clear(self):
+		self._push_history()
 		self.textA.delete("1.0", tk.END)
 		self.textB.delete("1.0", tk.END)
 		self._set_result("")
@@ -460,6 +470,44 @@ class MatrixApp(tk.Tk):
 		if hasattr(self, "status"):
 			self.status.configure(text="Готово")
 
+	def _snapshot(self):
+		return {
+			"A": self.textA.get("1.0", tk.END),
+			"B": self.textB.get("1.0", tk.END),
+			"R": self.result.get("1.0", tk.END)
+		}
+
+	def _restore(self, snap):
+		self.textA.delete("1.0", tk.END)
+		self.textA.insert("1.0", snap.get("A", ""))
+		self.textB.delete("1.0", tk.END)
+		self.textB.insert("1.0", snap.get("B", ""))
+		self._set_result(snap.get("R", ""))
+
+	def _push_history(self):
+		self._history.append(self._snapshot())
+		self._future.clear()
+
+	def _undo(self):
+		if not self._history:
+			return
+		cur = self._snapshot()
+		snap = self._history.pop()
+		self._future.append(cur)
+		self._restore(snap)
+		if hasattr(self, "status"):
+			self.status.configure(text="Отмена")
+
+	def _redo(self):
+		if not self._future:
+			return
+		cur = self._snapshot()
+		snap = self._future.pop()
+		self._history.append(cur)
+		self._restore(snap)
+		if hasattr(self, "status"):
+			self.status.configure(text="Повтор")
+
 	def on_calculate(self):
 		try:
 			A = self._parse_matrix(self.textA.get("1.0", tk.END))
@@ -469,6 +517,7 @@ class MatrixApp(tk.Tk):
 			return
 
 		op = self.op_var.get()
+		self._push_history()
 		try:
 			if op in ("add", "sub", "mul"):
 				if A is None or B_or_b is None:
