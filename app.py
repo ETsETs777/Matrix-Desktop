@@ -126,13 +126,16 @@ class MatrixApp(tk.Tk):
 		filem = tk.Menu(menubar, tearoff=0)
 		filem.add_command(label="Импорт A из CSV", command=lambda: self._import_csv(target="A"))
 		filem.add_command(label="Импорт B из CSV", command=lambda: self._import_csv(target="B"))
+		filem.add_command(label="Импорт JSON", command=self._import_json)
 		filem.add_separator()
 		filem.add_command(label="Экспорт A в CSV", command=lambda: self._export_csv(source="A"))
 		filem.add_command(label="Экспорт B в CSV", command=lambda: self._export_csv(source="B"))
 		filem.add_command(label="Экспорт результата в CSV", command=lambda: self._export_csv(source="R"))
+		filem.add_command(label="Экспорт JSON", command=self._export_json)
 		filem.add_separator()
 		filem.add_command(label="Экспорт результата в LaTeX", command=self._export_latex)
 		filem.add_command(label="Копировать результат", command=self._copy_result)
+		filem.add_command(label="Копировать результат как таблицу", command=self._copy_result_tsv)
 		filem.add_separator()
 		filem.add_command(label="Выход", command=self.destroy)
 		menubar.add_cascade(label="Файл", menu=filem)
@@ -264,6 +267,47 @@ class MatrixApp(tk.Tk):
 	def _prefs_path(self):
 		return os.path.join(os.path.abspath(os.path.dirname(__file__)), "settings.json")
 
+	def _import_json(self):
+		path = filedialog.askopenfilename(title="Импорт JSON", filetypes=[("JSON", "*.json"), ("All files", "*.*")])
+		if not path:
+			return
+		with open(path, "r", encoding="utf-8") as f:
+			obj = json.load(f)
+		if isinstance(obj, dict):
+			if "A" in obj:
+				self.textA.delete("1.0", tk.END)
+				self.textA.insert("1.0", self._format_matrix(np.array(obj["A"], dtype=float)))
+			if "B" in obj:
+				self.textB.delete("1.0", tk.END)
+				self.textB.insert("1.0", self._format_matrix(np.array(obj["B"], dtype=float)))
+			if "R" in obj:
+				self._set_result(self._format_matrix(np.array(obj["R"], dtype=float)))
+		if hasattr(self, "status"):
+			self.status.configure(text="Импорт JSON выполнен")
+
+	def _export_json(self):
+		def parse_text(text):
+			rows = [r.strip() for r in text.strip().splitlines() if r.strip()]
+			if not rows:
+				return []
+			data = []
+			for r in rows:
+				parts = [p for p in r.replace(";", " ").replace(",", " ").split() if p]
+				data.append([float(p) for p in parts])
+			return data
+		obj = {
+			"A": parse_text(self.textA.get("1.0", tk.END)),
+			"B": parse_text(self.textB.get("1.0", tk.END)),
+			"R": parse_text(self.result.get("1.0", tk.END))
+		}
+		path = filedialog.asksaveasfilename(title="Экспорт JSON", defaultextension=".json", filetypes=[("JSON", "*.json")])
+		if not path:
+			return
+		with open(path, "w", encoding="utf-8") as f:
+			json.dump(obj, f, ensure_ascii=False, indent=2)
+		if hasattr(self, "status"):
+			self.status.configure(text="Экспорт JSON выполнен")
+
 	def _copy_result(self):
 		text = self.result.get("1.0", tk.END).strip()
 		if not text:
@@ -272,6 +316,21 @@ class MatrixApp(tk.Tk):
 		self.clipboard_append(text)
 		if hasattr(self, "status"):
 			self.status.configure(text="Скопировано в буфер обмена")
+
+	def _copy_result_tsv(self):
+		text = self.result.get("1.0", tk.END).strip()
+		if not text:
+			return
+		lines = [l.strip("[] ") for l in text.splitlines() if l.strip()]
+		rows = []
+		for l in lines:
+			parts = [p.strip() for p in l.split(";") if p.strip()]
+			rows.append("\t".join(parts))
+		tsv = "\n".join(rows)
+		self.clipboard_clear()
+		self.clipboard_append(tsv)
+		if hasattr(self, "status"):
+			self.status.configure(text="Скопировано как таблица (TSV)")
 
 	def _text_to_matrix_str(self, which):
 		if which == "A":
