@@ -124,3 +124,27 @@ pyinstaller --noconsole --onefile --name MatrixDesktop app.py
    build.bat
    ```
 2. Готовый файл будет в `dist/MatrixDesktop.exe`.
+
+## RUN.exe, иконка и ярлык
+
+Скрипт `build.bat` дополнительно:
+- конвертирует `assets/calc.png` в `assets/calc.ico` (если PNG есть),
+- собирает приложение с иконкой,
+- копирует исполняемый файл в корень проекта как `RUN.exe`,
+- создаёт ярлык `MatrixDesktop.lnk` на рабочем столе (цель — `RUN.exe`).
+
+Если хотите использовать свою иконку, замените `assets/calc.png` на нужный файл PNG 256×256.
+
+## Подпись RUN.exe (необязательно)
+
+Для кода‑подписи укажите переменные окружения перед запуском `build.bat`:
+
+```cmd
+set SIGN_PFX=C:\path\to\cert.pfx
+set SIGN_PWD=your_password
+build.bat
+```
+
+Требования:
+- установлен `signtool` (Windows SDK) в `PATH`;
+- действующий сертификат `.pfx`.
