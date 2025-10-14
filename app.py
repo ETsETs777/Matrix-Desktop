@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
 from tkinter import font as tkfont
 import numpy as np
+import scipy.linalg as la
 import csv
 import json
 import os
@@ -46,7 +47,21 @@ class MatrixApp(tk.Tk):
 			("rank(B)", "rankB"),
 			("A^{-1}", "invA"),
 			("B^{-1}", "invB"),
-			("Решить Ax=b", "solve")
+			("Решить Ax=b", "solve"),
+			("eig(A)", "eigA"),
+			("eig(B)", "eigB"),
+			("SVD(A)", "svdA"),
+			("SVD(B)", "svdB"),
+			("LU(A)", "luA"),
+			("LU(B)", "luB"),
+			("QR(A)", "qrA"),
+			("QR(B)", "qrB"),
+			("Cholesky(A)", "cholA"),
+			("Cholesky(B)", "cholB"),
+			("pinv(A)", "pinvA"),
+			("pinv(B)", "pinvB"),
+			("‖A‖ и cond(A)", "normCondA"),
+			("‖B‖ и cond(B)", "normCondB")
 		]
 		for text, val in ops:
 			ttk.Radiobutton(top, text=text, variable=self.op_var, value=val, style="Modern.TRadiobutton").pack(side=tk.LEFT, padx=6, pady=2)
@@ -549,6 +564,95 @@ class MatrixApp(tk.Tk):
 				self._set_result(self._format_matrix(res))
 				if hasattr(self, "status"):
 					self.status.configure(text="Выполнено: Ax=b")
+				return
+
+			if op in ("eigA", "eigB"):
+				M = A if op == "eigA" else B_or_b
+				name = "A" if op == "eigA" else "B"
+				if M is None:
+					raise ValueError(f"Нужно ввести {name}")
+				w, v = np.linalg.eig(M)
+				text = "Собственные значения:\n" + self._format_matrix(w) + "\n\nСобственные векторы (по столбцам):\n" + self._format_matrix(v)
+				self._set_result(text)
+				if hasattr(self, "status"):
+					self.status.configure(text=f"Выполнено: eig({name})")
+				return
+
+			if op in ("svdA", "svdB"):
+				M = A if op == "svdA" else B_or_b
+				name = "A" if op == "svdA" else "B"
+				if M is None:
+					raise ValueError(f"Нужно ввести {name}")
+				U, s, Vt = np.linalg.svd(M, full_matrices=False)
+				text = "U:\n" + self._format_matrix(U) + "\n\nΣ:\n" + self._format_matrix(np.diag(s)) + "\n\nV^T:\n" + self._format_matrix(Vt)
+				self._set_result(text)
+				if hasattr(self, "status"):
+					self.status.configure(text=f"Выполнено: SVD({name})")
+				return
+
+			if op in ("luA", "luB"):
+				M = A if op == "luA" else B_or_b
+				name = "A" if op == "luA" else "B"
+				if M is None:
+					raise ValueError(f"Нужно ввести {name}")
+				P, L, U = la.lu(M)
+				text = "P:\n" + self._format_matrix(P) + "\n\nL:\n" + self._format_matrix(L) + "\n\nU:\n" + self._format_matrix(U)
+				self._set_result(text)
+				if hasattr(self, "status"):
+					self.status.configure(text=f"Выполнено: LU({name})")
+				return
+
+			if op in ("qrA", "qrB"):
+				M = A if op == "qrA" else B_or_b
+				name = "A" if op == "qrA" else "B"
+				if M is None:
+					raise ValueError(f"Нужно ввести {name}")
+				Q, R = np.linalg.qr(M)
+				text = "Q:\n" + self._format_matrix(Q) + "\n\nR:\n" + self._format_matrix(R)
+				self._set_result(text)
+				if hasattr(self, "status"):
+					self.status.configure(text=f"Выполнено: QR({name})")
+				return
+
+			if op in ("cholA", "cholB"):
+				M = A if op == "cholA" else B_or_b
+				name = "A" if op == "cholA" else "B"
+				if M is None:
+					raise ValueError(f"Нужно ввести {name}")
+				L = np.linalg.cholesky(M)
+				self._set_result("L:\n" + self._format_matrix(L))
+				if hasattr(self, "status"):
+					self.status.configure(text=f"Выполнено: Cholesky({name})")
+				return
+
+			if op in ("pinvA", "pinvB"):
+				M = A if op == "pinvA" else B_or_b
+				name = "A" if op == "pinvA" else "B"
+				if M is None:
+					raise ValueError(f"Нужно ввести {name}")
+				res = np.linalg.pinv(M)
+				self._set_result(self._format_matrix(res))
+				if hasattr(self, "status"):
+					self.status.configure(text=f"Выполнено: pinv({name})")
+				return
+
+			if op in ("normCondA", "normCondB"):
+				M = A if op == "normCondA" else B_or_b
+				name = "A" if op == "normCondA" else "B"
+				if M is None:
+					raise ValueError(f"Нужно ввести {name}")
+				n1 = la.norm(M, 1)
+				n2 = la.norm(M, 2)
+				ninf = la.norm(M, np.inf)
+				text = f"‖{name}‖_1 = {n1:g}\n‖{name}‖_2 = {n2:g}\n‖{name}‖_∞ = {ninf:g}"
+				try:
+					c2 = np.linalg.cond(M)
+					text += f"\ncond_2({name}) = {c2:g}"
+				except Exception:
+					pass
+				self._set_result(text)
+				if hasattr(self, "status"):
+					self.status.configure(text=f"Выполнено: нормы/cond({name})")
 				return
 
 			raise ValueError("Неизвестная операция")
