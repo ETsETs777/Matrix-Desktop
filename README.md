@@ -112,3 +112,15 @@ python app.py
 pip install pyinstaller
 pyinstaller --noconsole --onefile --name MatrixDesktop app.py
 ```
+
+## Локальная сборка .exe (через скрипт)
+
+В проект добавлен скрипт `build.bat` для Windows.
+
+Шаги:
+
+1. Дважды щёлкните `build.bat` или запустите в терминале:
+   ```cmd
+   build.bat
+   ```
+2. Готовый файл будет в `dist/MatrixDesktop.exe`.
