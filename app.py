@@ -23,6 +23,8 @@ class MatrixApp(tk.Tk):
 		self._future = []
 		self._build_menu()
 		self._build_ui()
+		self._build_icons()
+		self._autosave_setup()
 
 	def _build_ui(self):
 		container = ttk.Frame(self, padding=(12, 12, 12, 12))
@@ -37,9 +39,11 @@ class MatrixApp(tk.Tk):
 
 		toolbar = ttk.Frame(container)
 		toolbar.pack(fill=tk.X, pady=(0, 8))
-		btn_calc = ttk.Button(toolbar, text="▶ Вычислить", style="Accent.TButton", command=self.on_calculate)
+		self._icon_calc = None
+		self._icon_clear = None
+		btn_calc = ttk.Button(toolbar, text="Вычислить", style="Accent.TButton", command=self.on_calculate)
 		btn_calc.pack(side=tk.LEFT, padx=(0, 6))
-		btn_clear = ttk.Button(toolbar, text="🧹 Очистить", command=self.on_clear)
+		btn_clear = ttk.Button(toolbar, text="Очистить", command=self.on_clear)
 		btn_clear.pack(side=tk.LEFT)
 		zoom_out = ttk.Button(toolbar, text="A-", width=4, command=lambda: self._zoom(-1))
 		zoom_out.pack(side=tk.RIGHT)
@@ -130,6 +134,7 @@ class MatrixApp(tk.Tk):
 		vx.grid(row=1, column=0, sticky="ew")
 		outer.columnconfigure(0, weight=1)
 		outer.rowconfigure(0, weight=1)
+		self._attach_focus_animation(txt)
 		return txt
 
 	def _mono_font(self):
@@ -331,7 +336,72 @@ class MatrixApp(tk.Tk):
 				widgets.append(getattr(self, name))
 		self._all_text_widgets = widgets
 		for txt in self._all_text_widgets:
-			txt.configure(bg=bg, fg=fg, insertbackground=cursor, selectbackground=select, highlightthickness=1, highlightbackground=border, highlightcolor=border)
+			txt.configure(bg=bg, fg=fg, insertbackground=cursor, selectbackground=select, highlightthickness=2, highlightbackground=border, highlightcolor=border)
+
+	def _attach_focus_animation(self, widget):
+		def animate(to_color, steps=8, interval=15):
+			from_colors = widget.cget("highlightbackground")
+			def hex_to_rgb(h):
+				h = h.lstrip('#')
+				return tuple(int(h[i:i+2], 16) for i in (0,2,4))
+			def rgb_to_hex(rgb):
+				return '#%02x%02x%02x' % rgb
+			c0 = hex_to_rgb(from_colors) if isinstance(from_colors, str) and from_colors.startswith('#') else (31,41,55)
+			c1 = hex_to_rgb(to_color)
+			for i in range(1, steps+1):
+				mix = tuple(int(c0[j] + (c1[j]-c0[j]) * i/steps) for j in range(3))
+				widget.after(i*interval, lambda m=mix: widget.configure(highlightbackground=rgb_to_hex(m), highlightcolor=rgb_to_hex(m)))
+		def on_focus_in(e):
+			animate('#3B82F6')
+		def on_focus_out(e):
+			base = '#1F2937' if self.theme_var.get() != 'light' else '#E5E7EB'
+			animate(base)
+		widget.bind('<FocusIn>', on_focus_in)
+		widget.bind('<FocusOut>', on_focus_out)
+
+	def _build_icons(self):
+		try:
+			img_calc_data = b""  
+			img_clear_data = b""
+			if img_calc_data:
+				self._icon_calc = tk.PhotoImage(data=img_calc_data)
+			if img_clear_data:
+				self._icon_clear = tk.PhotoImage(data=img_clear_data)
+		except Exception:
+			self._icon_calc = None
+			self._icon_clear = None
+		for child in self.winfo_children():
+			pass
+
+	def _autosave_setup(self):
+		self._autosave_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'last_state.json')
+		self.after(2000, self._autosave_tick)
+		self._restore_last_state()
+
+	def _restore_last_state(self):
+		try:
+			with open(self._autosave_path, 'r', encoding='utf-8') as f:
+				obj = json.load(f)
+			self.textA.delete('1.0', tk.END)
+			self.textA.insert('1.0', obj.get('A', ''))
+			self.textB.delete('1.0', tk.END)
+			self.textB.insert('1.0', obj.get('B', ''))
+			self._set_result(obj.get('R', ''))
+		except Exception:
+			pass
+
+	def _autosave_tick(self):
+		try:
+			obj = {
+				'A': self.textA.get('1.0', tk.END),
+				'B': self.textB.get('1.0', tk.END),
+				'R': self.result.get('1.0', tk.END)
+			}
+			with open(self._autosave_path, 'w', encoding='utf-8') as f:
+				json.dump(obj, f, ensure_ascii=False)
+		except Exception:
+			pass
+		self.after(2000, self._autosave_tick)
 
 	def _save_prefs(self):
 		prefs = {"theme": self.theme_var.get()}
