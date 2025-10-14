@@ -15,7 +15,7 @@ class MatrixApp(tk.Tk):
 		self.minsize(960, 640)
 		self.style = ttk.Style(self)
 		self._init_themes()
-		self.dark_mode = tk.BooleanVar(value=True)
+		self.theme_var = tk.StringVar(value="dark")
 		self._load_prefs()
 		self._apply_theme()
 		self._ui_font_size = 11
@@ -37,14 +37,18 @@ class MatrixApp(tk.Tk):
 
 		toolbar = ttk.Frame(container)
 		toolbar.pack(fill=tk.X, pady=(0, 8))
-		btn_calc = ttk.Button(toolbar, text="Вычислить", style="Accent.TButton", command=self.on_calculate)
+		btn_calc = ttk.Button(toolbar, text="▶ Вычислить", style="Accent.TButton", command=self.on_calculate)
 		btn_calc.pack(side=tk.LEFT, padx=(0, 6))
-		btn_clear = ttk.Button(toolbar, text="Очистить", command=self.on_clear)
+		btn_clear = ttk.Button(toolbar, text="🧹 Очистить", command=self.on_clear)
 		btn_clear.pack(side=tk.LEFT)
 		zoom_out = ttk.Button(toolbar, text="A-", width=4, command=lambda: self._zoom(-1))
 		zoom_out.pack(side=tk.RIGHT)
 		zoom_in = ttk.Button(toolbar, text="A+", width=4, command=lambda: self._zoom(1))
 		zoom_in.pack(side=tk.RIGHT, padx=(0,6))
+		self._add_tooltip(btn_calc, "Выполнить выбранную операцию (Ctrl+Enter)")
+		self._add_tooltip(btn_clear, "Очистить поля A, B и результат (Ctrl+L)")
+		self._add_tooltip(zoom_in, "Увеличить размер шрифта")
+		self._add_tooltip(zoom_out, "Уменьшить размер шрифта")
 
 		tabs = ttk.Notebook(container)
 		tabs.pack(fill=tk.X)
@@ -70,7 +74,9 @@ class MatrixApp(tk.Tk):
 			inner = ttk.Frame(frame, padding=(10, 8, 10, 8))
 			inner.pack(fill=tk.X)
 			for text, val in items:
-				ttk.Radiobutton(inner, text=text, variable=self.op_var, value=val, style="Modern.TRadiobutton").pack(side=tk.LEFT, padx=6, pady=2)
+				rb = ttk.Radiobutton(inner, text=text, variable=self.op_var, value=val, style="Modern.TRadiobutton")
+				rb.pack(side=tk.LEFT, padx=6, pady=2)
+				self._add_tooltip(rb, f"Операция: {text}")
 
 		mid = ttk.Frame(container)
 		mid.pack(fill=tk.BOTH, expand=True, pady=12)
@@ -84,6 +90,8 @@ class MatrixApp(tk.Tk):
 		self.textB = self._make_scrolled_text(right)
 		self._set_placeholder(self.textA, "Пример:\n1 2 3\n4 5 6")
 		self._set_placeholder(self.textB, "Пример:\n9 8 7\n6 5 4")
+		self._add_tooltip(self.textA, "Матрица A: числа разделяйте пробелом/запятой/точкой с запятой")
+		self._add_tooltip(self.textB, "Матрица B или вектор b для Ax=b")
 
 		btns = ttk.Frame(container)
 		btns.pack(fill=tk.X)
@@ -148,6 +156,23 @@ class MatrixApp(tk.Tk):
 		widget.bind("<FocusIn>", on_focus_in)
 		widget.bind("<FocusOut>", on_focus_out)
 
+	def _add_tooltip(self, widget, text):
+		tip = tk.Toplevel(widget)
+		tip.withdraw()
+		tip.overrideredirect(True)
+		lbl = ttk.Label(tip, text=text, style="Help.TLabel", padding=(8,4))
+		lbl.pack()
+		def show(event):
+			tip.deiconify()
+			tip.lift()
+			x = widget.winfo_rootx() + 10
+			y = widget.winfo_rooty() + widget.winfo_height() + 6
+			tip.geometry(f"+{x}+{y}")
+		def hide(event):
+			tip.withdraw()
+		widget.bind("<Enter>", show)
+		widget.bind("<Leave>", hide)
+
 	def _build_menu(self):
 		menubar = tk.Menu(self)
 		filem = tk.Menu(menubar, tearoff=0)
@@ -181,7 +206,9 @@ class MatrixApp(tk.Tk):
 		menubar.add_cascade(label="Правка", menu=editm)
 
 		view = tk.Menu(menubar, tearoff=0)
-		view.add_checkbutton(label="Тёмная тема", onvalue=True, offvalue=False, variable=self.dark_mode, command=self._on_toggle_theme)
+		view.add_radiobutton(label="Светлая тема", value="light", variable=self.theme_var, command=self._on_toggle_theme)
+		view.add_radiobutton(label="Тёмная тема", value="dark", variable=self.theme_var, command=self._on_toggle_theme)
+		view.add_radiobutton(label="Контрастная тема", value="contrast", variable=self.theme_var, command=self._on_toggle_theme)
 		menubar.add_cascade(label="Вид", menu=view)
 		self.config(menu=menubar)
 
@@ -209,6 +236,16 @@ class MatrixApp(tk.Tk):
 			"primary_hover": "#3B82F6",
 			"border": "#1F2937",
 			"accent_text": "#0B1220"
+		}
+		contrast = {
+			"bg": "#000000",
+			"surface": "#000000",
+			"text": "#FFFFFF",
+			"muted": "#FFD700",
+			"primary": "#FFFF00",
+			"primary_hover": "#FFD700",
+			"border": "#FFFFFF",
+			"accent_text": "#000000"
 		}
 		if "matrix-light" not in self.style.theme_names():
 			self.style.theme_create("matrix-light", parent="clam", settings={
@@ -240,17 +277,38 @@ class MatrixApp(tk.Tk):
 				"TRadiobutton": {"configure": {"background": dark["bg"], "foreground": dark["text"]}},
 				"Modern.TRadiobutton": {"configure": {"background": dark["bg"], "foreground": dark["text"]}}
 			})
+		if "matrix-contrast" not in self.style.theme_names():
+			self.style.theme_create("matrix-contrast", parent="clam", settings={
+				"TFrame": {"configure": {"background": contrast["bg"]}},
+				"TLabelframe": {"configure": {"background": contrast["surface"], "foreground": contrast["text"], "bordercolor": contrast["border"]}},
+				"TLabelframe.Label": {"configure": {"background": contrast["surface"], "foreground": contrast["muted"], "font": ("Segoe UI", 11, "bold")}},
+				"TLabel": {"configure": {"background": contrast["bg"], "foreground": contrast["text"]}},
+				"Title.TLabel": {"configure": {"background": contrast["bg"], "foreground": contrast["text"], "font": ("Segoe UI Semibold", 18)}},
+				"Subtitle.TLabel": {"configure": {"background": contrast["bg"], "foreground": contrast["muted"], "font": ("Segoe UI", 11)}},
+				"Help.TLabel": {"configure": {"background": contrast["bg"], "foreground": contrast["muted"]}},
+				"Status.TLabel": {"configure": {"background": contrast["surface"], "foreground": contrast["muted"], "padding": (10, 6)}},
+				"TButton": {"configure": {"background": contrast["surface"], "foreground": contrast["text"], "padding": (12, 8)}, "map": {"background": [("active", contrast["border"])], "foreground": [("disabled", contrast["muted"])]}},
+				"Accent.TButton": {"configure": {"background": contrast["primary"], "foreground": contrast["accent_text"]}, "map": {"background": [("active", contrast["primary_hover"])]}},
+				"TRadiobutton": {"configure": {"background": contrast["bg"], "foreground": contrast["text"]}},
+				"Modern.TRadiobutton": {"configure": {"background": contrast["bg"], "foreground": contrast["text"]}}
+			})
 
 	def _apply_theme(self):
-		self.style.theme_use("matrix-dark" if self.dark_mode.get() else "matrix-light")
+		chosen = self.theme_var.get()
+		if chosen == "dark":
+			self.style.theme_use("matrix-dark")
+		elif chosen == "contrast":
+			self.style.theme_use("matrix-contrast")
+		else:
+			self.style.theme_use("matrix-light")
 		bg = self.style.lookup("TFrame", "background")
 		self.configure(bg=bg)
 		if hasattr(self, "status"):
-			self.status.configure(text="Тёмная тема" if self.dark_mode.get() else "Светлая тема")
+			self.status.configure(text=f"Тема: {self.theme_var.get()}")
 		self._apply_text_colors()
 
 	def _apply_text_colors(self):
-		is_dark = self.dark_mode.get()
+		is_dark = self.theme_var.get() != "light"
 		if is_dark:
 			bg = "#0B1220"
 			fg = "#E5E7EB"
@@ -276,7 +334,7 @@ class MatrixApp(tk.Tk):
 			txt.configure(bg=bg, fg=fg, insertbackground=cursor, selectbackground=select, highlightthickness=1, highlightbackground=border, highlightcolor=border)
 
 	def _save_prefs(self):
-		prefs = {"dark_mode": self.dark_mode.get()}
+		prefs = {"theme": self.theme_var.get()}
 		try:
 			with open(self._prefs_path(), "w", encoding="utf-8") as f:
 				json.dump(prefs, f)
@@ -287,9 +345,9 @@ class MatrixApp(tk.Tk):
 		try:
 			with open(self._prefs_path(), "r", encoding="utf-8") as f:
 				prefs = json.load(f)
-			self.dark_mode.set(bool(prefs.get("dark_mode", True)))
+			self.theme_var.set(prefs.get("theme", "dark"))
 		except Exception:
-			self.dark_mode.set(True)
+			self.theme_var.set("dark")
 
 	def _prefs_path(self):
 		return os.path.join(os.path.abspath(os.path.dirname(__file__)), "settings.json")
