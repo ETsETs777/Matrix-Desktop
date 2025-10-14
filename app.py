@@ -18,6 +18,7 @@ class MatrixApp(tk.Tk):
 		self.dark_mode = tk.BooleanVar(value=True)
 		self._load_prefs()
 		self._apply_theme()
+		self._ui_font_size = 11
 		self._history = []
 		self._future = []
 		self._build_menu()
@@ -34,39 +35,42 @@ class MatrixApp(tk.Tk):
 		subtitle = ttk.Label(header, text="Калькулятор матриц", style="Subtitle.TLabel")
 		subtitle.pack(side=tk.LEFT, padx=(12, 0))
 
-		top = ttk.Labelframe(container, text="Операции", padding=(10, 8, 10, 8))
-		top.pack(fill=tk.X)
+		toolbar = ttk.Frame(container)
+		toolbar.pack(fill=tk.X, pady=(0, 8))
+		btn_calc = ttk.Button(toolbar, text="Вычислить", style="Accent.TButton", command=self.on_calculate)
+		btn_calc.pack(side=tk.LEFT, padx=(0, 6))
+		btn_clear = ttk.Button(toolbar, text="Очистить", command=self.on_clear)
+		btn_clear.pack(side=tk.LEFT)
+		zoom_out = ttk.Button(toolbar, text="A-", width=4, command=lambda: self._zoom(-1))
+		zoom_out.pack(side=tk.RIGHT)
+		zoom_in = ttk.Button(toolbar, text="A+", width=4, command=lambda: self._zoom(1))
+		zoom_in.pack(side=tk.RIGHT, padx=(0,6))
+
+		tabs = ttk.Notebook(container)
+		tabs.pack(fill=tk.X)
 		self.op_var = tk.StringVar(value="add")
-		ops = [
-			("A + B", "add"),
-			("A - B", "sub"),
-			("A × B", "mul"),
-			("A^T", "transposeA"),
-			("B^T", "transposeB"),
-			("det(A)", "detA"),
-			("det(B)", "detB"),
-			("rank(A)", "rankA"),
-			("rank(B)", "rankB"),
-			("A^{-1}", "invA"),
-			("B^{-1}", "invB"),
-			("Решить Ax=b", "solve"),
-			("eig(A)", "eigA"),
-			("eig(B)", "eigB"),
-			("SVD(A)", "svdA"),
-			("SVD(B)", "svdB"),
-			("LU(A)", "luA"),
-			("LU(B)", "luB"),
-			("QR(A)", "qrA"),
-			("QR(B)", "qrB"),
-			("Cholesky(A)", "cholA"),
-			("Cholesky(B)", "cholB"),
-			("pinv(A)", "pinvA"),
-			("pinv(B)", "pinvB"),
-			("‖A‖ и cond(A)", "normCondA"),
-			("‖B‖ и cond(B)", "normCondB")
-		]
-		for text, val in ops:
-			ttk.Radiobutton(top, text=text, variable=self.op_var, value=val, style="Modern.TRadiobutton").pack(side=tk.LEFT, padx=6, pady=2)
+		cats = {
+			"Базовые": [
+				("A + B", "add"), ("A - B", "sub"), ("A × B", "mul"), ("A^T", "transposeA"), ("B^T", "transposeB"),
+				("det(A)", "detA"), ("det(B)", "detB"), ("rank(A)", "rankA"), ("rank(B)", "rankB"),
+				("A^{-1}", "invA"), ("B^{-1}", "invB"), ("Решить Ax=b", "solve")
+			],
+			"Факторизации": [
+				("eig(A)", "eigA"), ("eig(B)", "eigB"), ("SVD(A)", "svdA"), ("SVD(B)", "svdB"),
+				("LU(A)", "luA"), ("LU(B)", "luB"), ("QR(A)", "qrA"), ("QR(B)", "qrB"),
+				("Cholesky(A)", "cholA"), ("Cholesky(B)", "cholB")
+			],
+			"Другое": [
+				("pinv(A)", "pinvA"), ("pinv(B)", "pinvB"), ("‖A‖ и cond(A)", "normCondA"), ("‖B‖ и cond(B)", "normCondB")
+			]
+		}
+		for name, items in cats.items():
+			frame = ttk.Frame(tabs)
+			tabs.add(frame, text=name)
+			inner = ttk.Frame(frame, padding=(10, 8, 10, 8))
+			inner.pack(fill=tk.X)
+			for text, val in items:
+				ttk.Radiobutton(inner, text=text, variable=self.op_var, value=val, style="Modern.TRadiobutton").pack(side=tk.LEFT, padx=6, pady=2)
 
 		mid = ttk.Frame(container)
 		mid.pack(fill=tk.BOTH, expand=True, pady=12)
@@ -78,6 +82,8 @@ class MatrixApp(tk.Tk):
 
 		self.textA = self._make_scrolled_text(left)
 		self.textB = self._make_scrolled_text(right)
+		self._set_placeholder(self.textA, "Пример:\n1 2 3\n4 5 6")
+		self._set_placeholder(self.textB, "Пример:\n9 8 7\n6 5 4")
 
 		btns = ttk.Frame(container)
 		btns.pack(fill=tk.X)
@@ -119,7 +125,28 @@ class MatrixApp(tk.Tk):
 		return txt
 
 	def _mono_font(self):
-		return tkfont.Font(family="Consolas", size=11)
+		return tkfont.Font(family="Consolas", size=self._ui_font_size)
+
+	def _zoom(self, delta):
+		self._ui_font_size = max(8, min(28, self._ui_font_size + delta))
+		for txt in getattr(self, "_all_text_widgets", []):
+			txt.configure(font=self._mono_font())
+		if hasattr(self, "status"):
+			self.status.configure(text=f"Размер шрифта: {self._ui_font_size}")
+
+	def _set_placeholder(self, widget, text):
+		def on_focus_in(e):
+			if widget.get("1.0", "end-1c") == text:
+				widget.delete("1.0", tk.END)
+				widget.configure(fg=self.style.lookup("TLabel", "foreground"))
+		def on_focus_out(e):
+			if not widget.get("1.0", "end-1c").strip():
+				widget.insert("1.0", text)
+				widget.configure(fg=self.style.lookup("Help.TLabel", "foreground"))
+		widget.insert("1.0", text)
+		widget.configure(fg=self.style.lookup("Help.TLabel", "foreground"))
+		widget.bind("<FocusIn>", on_focus_in)
+		widget.bind("<FocusOut>", on_focus_out)
 
 	def _build_menu(self):
 		menubar = tk.Menu(self)
