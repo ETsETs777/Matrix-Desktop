@@ -1,7 +1,10 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog, simpledialog
 from tkinter import font as tkfont
 import numpy as np
+import csv
+import json
+import os
 
 class MatrixApp(tk.Tk):
 	def __init__(self):
@@ -12,6 +15,7 @@ class MatrixApp(tk.Tk):
 		self.style = ttk.Style(self)
 		self._init_themes()
 		self.dark_mode = tk.BooleanVar(value=True)
+		self._load_prefs()
 		self._apply_theme()
 		self._build_menu()
 		self._build_ui()
@@ -100,10 +104,36 @@ class MatrixApp(tk.Tk):
 
 	def _build_menu(self):
 		menubar = tk.Menu(self)
+		filem = tk.Menu(menubar, tearoff=0)
+		filem.add_command(label="Импорт A из CSV", command=lambda: self._import_csv(target="A"))
+		filem.add_command(label="Импорт B из CSV", command=lambda: self._import_csv(target="B"))
+		filem.add_separator()
+		filem.add_command(label="Экспорт A в CSV", command=lambda: self._export_csv(source="A"))
+		filem.add_command(label="Экспорт B в CSV", command=lambda: self._export_csv(source="B"))
+		filem.add_command(label="Экспорт результата в CSV", command=lambda: self._export_csv(source="R"))
+		filem.add_separator()
+		filem.add_command(label="Экспорт результата в LaTeX", command=self._export_latex)
+		filem.add_command(label="Копировать результат", command=self._copy_result)
+		filem.add_separator()
+		filem.add_command(label="Выход", command=self.destroy)
+		menubar.add_cascade(label="Файл", menu=filem)
+
+		matm = tk.Menu(menubar, tearoff=0)
+		matm.add_command(label="Сгенерировать A...", command=lambda: self._generate_matrix("A"))
+		matm.add_command(label="Сгенерировать B...", command=lambda: self._generate_matrix("B"))
+		matm.add_separator()
+		matm.add_command(label="RREF(A) с шагами", command=lambda: self._do_rref("A"))
+		matm.add_command(label="RREF(B) с шагами", command=lambda: self._do_rref("B"))
+		menubar.add_cascade(label="Матрицы", menu=matm)
+
 		view = tk.Menu(menubar, tearoff=0)
-		view.add_checkbutton(label="Тёмная тема", onvalue=True, offvalue=False, variable=self.dark_mode, command=self._apply_theme)
+		view.add_checkbutton(label="Тёмная тема", onvalue=True, offvalue=False, variable=self.dark_mode, command=self._on_toggle_theme)
 		menubar.add_cascade(label="Вид", menu=view)
 		self.config(menu=menubar)
+
+	def _on_toggle_theme(self):
+		self._apply_theme()
+		self._save_prefs()
 
 	def _init_themes(self):
 		light = {
@@ -190,6 +220,191 @@ class MatrixApp(tk.Tk):
 		self._all_text_widgets = widgets
 		for txt in self._all_text_widgets:
 			txt.configure(bg=bg, fg=fg, insertbackground=cursor, selectbackground=select, highlightthickness=1, highlightbackground=border, highlightcolor=border)
+
+	def _save_prefs(self):
+		prefs = {"dark_mode": self.dark_mode.get()}
+		try:
+			with open(self._prefs_path(), "w", encoding="utf-8") as f:
+				json.dump(prefs, f)
+		except Exception:
+			pass
+
+	def _load_prefs(self):
+		try:
+			with open(self._prefs_path(), "r", encoding="utf-8") as f:
+				prefs = json.load(f)
+			self.dark_mode.set(bool(prefs.get("dark_mode", True)))
+		except Exception:
+			self.dark_mode.set(True)
+
+	def _prefs_path(self):
+		return os.path.join(os.path.abspath(os.path.dirname(__file__)), "settings.json")
+
+	def _copy_result(self):
+		text = self.result.get("1.0", tk.END).strip()
+		if not text:
+			return
+		self.clipboard_clear()
+		self.clipboard_append(text)
+		if hasattr(self, "status"):
+			self.status.configure(text="Скопировано в буфер обмена")
+
+	def _text_to_matrix_str(self, which):
+		if which == "A":
+			return self.textA.get("1.0", tk.END)
+		if which == "B":
+			return self.textB.get("1.0", tk.END)
+		return self.result.get("1.0", tk.END)
+
+	def _import_csv(self, target="A"):
+		path = filedialog.askopenfilename(title="Импорт CSV", filetypes=[("CSV files", "*.csv"), ("All files", "*.*")])
+		if not path:
+			return
+		rows = []
+		with open(path, newline="", encoding="utf-8") as f:
+			data = f.read()
+			try:
+				dialect = csv.Sniffer().sniff(data)
+				reader = csv.reader(data.splitlines(), dialect)
+			except Exception:
+				reader = csv.reader(data.splitlines(), delimiter=",")
+			for r in reader:
+				if len(r) == 0:
+					continue
+				rows.append(" ".join(v.strip() for v in r))
+		text = "\n".join(rows)
+		if target == "A":
+			self.textA.delete("1.0", tk.END)
+			self.textA.insert("1.0", text)
+		else:
+			self.textB.delete("1.0", tk.END)
+			self.textB.insert("1.0", text)
+		if hasattr(self, "status"):
+			self.status.configure(text=f"Импортировано в {target}")
+
+	def _export_csv(self, source="A"):
+		if source == "A":
+			text = self.textA.get("1.0", tk.END).strip()
+		elif source == "B":
+			text = self.textB.get("1.0", tk.END).strip()
+		else:
+			text = self.result.get("1.0", tk.END).strip()
+		if not text:
+			return
+		path = filedialog.asksaveasfilename(title="Экспорт CSV", defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
+		if not path:
+			return
+		with open(path, "w", newline="", encoding="utf-8") as f:
+			writer = csv.writer(f)
+			for line in text.splitlines():
+				parts = [p for p in line.replace(";", " ").replace(",", " ").split() if p]
+				writer.writerow(parts)
+		if hasattr(self, "status"):
+			self.status.configure(text="Экспортировано в CSV")
+
+	def _export_latex(self):
+		text = self.result.get("1.0", tk.END).strip()
+		if not text:
+			return
+		lines = [l.strip() for l in text.splitlines() if l.strip()]
+		rows = []
+		for l in lines:
+			l = l.strip("[]")
+			parts = [p.strip() for p in l.split(";") if p.strip()]
+			rows.append(" \\ ".join(parts))
+		latex = "\\begin{bmatrix}\n" + " \\\n".join(rows) + "\n\\end{bmatrix}"
+		self.clipboard_clear()
+		self.clipboard_append(latex)
+		path = filedialog.asksaveasfilename(title="Экспорт LaTeX", defaultextension=".tex", filetypes=[("TeX", "*.tex")])
+		if path:
+			with open(path, "w", encoding="utf-8") as f:
+				f.write(latex)
+		if hasattr(self, "status"):
+			self.status.configure(text="LaTeX скопирован и сохранён")
+
+	def _generate_matrix(self, which):
+		kind = simpledialog.askstring("Генератор", "Тип: identity|random|diag")
+		if not kind:
+			return
+		n = simpledialog.askinteger("Размер", "Число строк", minvalue=1, maxvalue=500)
+		m = simpledialog.askinteger("Размер", "Число столбцов", minvalue=1, maxvalue=500)
+		if not n or not m:
+			return
+		M = None
+		if kind.lower().startswith("iden"):
+			k = min(n, m)
+			M = np.zeros((n, m))
+			for i in range(k):
+				M[i, i] = 1.0
+		elif kind.lower().startswith("rand"):
+			M = np.random.default_rng().normal(0, 1, size=(n, m))
+		elif kind.lower().startswith("diag"):
+			k = min(n, m)
+			M = np.zeros((n, m))
+			for i in range(k):
+				val = simpledialog.askfloat("Диагональ", f"Элемент d[{i+1}]")
+				M[i, i] = 0.0 if val is None else float(val)
+		else:
+			return
+		text = self._format_matrix(M)
+		if which == "A":
+			self.textA.delete("1.0", tk.END)
+			self.textA.insert("1.0", text)
+		else:
+			self.textB.delete("1.0", tk.END)
+			self.textB.insert("1.0", text)
+		if hasattr(self, "status"):
+			self.status.configure(text=f"Сгенерирована {which}")
+
+	def _do_rref(self, which):
+		try:
+			M = self._parse_matrix(self._text_to_matrix_str(which))
+		except Exception as e:
+			messagebox.showerror("Ошибка ввода", str(e))
+			return
+		if M is None:
+			return
+		text = self._rref_steps_text(M)
+		self._set_result(text)
+		if hasattr(self, "status"):
+			self.status.configure(text=f"RREF({which}) выполнено")
+
+	def _rref_steps_text(self, A):
+		A = A.astype(float)
+		rows, cols = A.shape
+		R = A.copy()
+		lines = []
+		r = 0
+		for c in range(cols):
+			if r >= rows:
+				break
+			pivot = None
+			mx = 0.0
+			for i in range(r, rows):
+				v = abs(R[i, c])
+				if v > mx + 1e-12:
+					mx = v
+					pivot = i
+			if pivot is None or abs(R[pivot, c]) < 1e-12:
+				continue
+			if pivot != r:
+				R[[r, pivot], :] = R[[pivot, r], :]
+				lines.append(f"swap R{r+1} ↔ R{pivot+1}\n" + self._format_matrix(R))
+			val = R[r, c]
+			R[r, :] = R[r, :] / val
+			lines.append(f"R{r+1} := R{r+1}/{val:g}\n" + self._format_matrix(R))
+			for i in range(rows):
+				if i == r:
+					continue
+				fact = R[i, c]
+				if abs(fact) < 1e-12:
+					continue
+				R[i, :] = R[i, :] - fact * R[r, :]
+				lines.append(f"R{i+1} := R{i+1} - ({fact:g})*R{r+1}\n" + self._format_matrix(R))
+			r += 1
+			if r >= rows:
+				break
+		return "\n\n".join(lines) if lines else self._format_matrix(R)
 
 	def on_clear(self):
 		self.textA.delete("1.0", tk.END)
