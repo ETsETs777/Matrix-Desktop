@@ -41,22 +41,7 @@ class MatrixApp(tk.Tk):
 	def _ensure_assets_with_embedded_icons(self):
 		assets_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'assets')
 		os.makedirs(assets_dir, exist_ok=True)
-		calc_png = (
-			b"iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAAIElEQVQ4jWNgGAWjgP8ZGBgY/0cQGJiBiYFB"
-			b"QwMDAwMAwAABHkQv4qf3r0AAAAASUVORK5CYII="
-		)
-		clear_png = (
-			b"iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAAPUlEQVQ4jWNgGAXUBv8ZGBgY/v//PwYGBmZg"
-			b"YGBQMAwMDIxA0QGg0EwGgQYjQZg0CwQwAA3mQJgZc6fJwAAAABJRU5ErkJggg=="
-		)
-		calc_path = os.path.join(assets_dir, 'calc.png')
-		clear_path = os.path.join(assets_dir, 'clear.png')
-		if not os.path.exists(calc_path):
-			with open(calc_path, 'wb') as f:
-				f.write(base64.b64decode(calc_png))
-		if not os.path.exists(clear_path):
-			with open(clear_path, 'wb') as f:
-				f.write(base64.b64decode(clear_png))
+		return
 
 	def _build_ui(self):
 		container = ttk.Frame(self, padding=(12, 12, 12, 12))
