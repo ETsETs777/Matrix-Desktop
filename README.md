@@ -101,3 +101,14 @@ python app.py
 ## Лицензия
 
 Свободно для использования в учебных и рабочих целях.
+
+## Сборка .exe (CI)
+
+Автосборка через GitHub Actions создаёт `MatrixDesktop.exe` как артефакт на Windows.
+
+Локально:
+
+```bash
+pip install pyinstaller
+pyinstaller --noconsole --onefile --name MatrixDesktop app.py
+```
