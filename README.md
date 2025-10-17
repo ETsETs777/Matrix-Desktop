@@ -1,3 +1,158 @@
+markdown
+# Matrix Desktop
+
+A beautiful desktop application built with Tkinter for matrix calculations: addition, subtraction, multiplication, transposition, determinant, rank, inverse matrix, and solving systems of linear equations Ax=b. Supports light/dark themes, hotkeys, and convenient input.
+
+## Features
+
+- Addition and subtraction of matrices A and B
+- Matrix multiplication A × B
+- Transposition A^T and B^T
+- Determinants det(A), det(B)
+- Ranks rank(A), rank(B)
+- Inverse matrices A^{-1}, B^{-1}
+- Solving system Ax=b (b - column vector or row vector)
+- Light/dark themes, status bar, neat scrollbars
+- Hotkeys: Ctrl+Enter - calculate, Ctrl+L - clear
+
+## Installation and Launch
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python app.py
+If using Anaconda/Miniconda:
+
+bash
+conda create -n matrix-desktop python=3.11 -y
+conda activate matrix-desktop
+pip install -r requirements.txt
+python app.py
+Input Format
+Each line in the field represents a separate matrix row
+
+Separate numbers with spaces, commas, or semicolons
+
+For Ax=b, enter vector b in the right field: one row or one column
+
+Examples:
+
+Matrix A
+
+text
+1 2 3
+4 5 6
+7 8 9
+Matrix B
+
+text
+9,8,7
+6,5,4
+3,2,1
+Vector b
+
+text
+1;2;3
+or
+
+text
+1 2 3
+Operations
+A + B, A - B: matrices A and B must have same dimensions
+
+A × B: number of columns in A equals number of rows in B
+
+A^T, B^T: transposition
+
+det(A), det(B): square matrices only
+
+rank(A), rank(B): any matrix form
+
+A^{-1}, B^{-1}: non-singular square matrices
+
+Solve Ax=b: A must be square non-singular, b must be vector of appropriate length
+
+Themes and Controls
+Theme switching: View → Dark Theme
+
+Hotkeys:
+
+Ctrl+Enter - calculate
+
+Ctrl+L - clear both input fields and results
+
+Error Messages
+"Need to enter both A and B" - operation requires both matrices
+
+"Need to enter A"/"Need to enter B" - check required field
+
+"Invalid shape: rows have different lengths" - align numbers by columns
+
+Linear algebra errors: singular matrix, invalid dimensions, etc.
+
+Tips
+For copy-paste from Excel, use space/comma/semicolon separators
+
+For large matrices, dark theme is recommended
+
+Output format in "Result" field - readable rows like [a; b; c]
+
+Dependencies
+Python 3.9+
+
+numpy, scipy (see versions in requirements.txt)
+
+License
+Free for use in educational and work purposes.
+
+.exe Build (CI)
+Automated build via GitHub Actions creates MatrixDesktop.exe as artifact on Windows.
+
+Locally:
+
+bash
+pip install pyinstaller
+pyinstaller --noconsole --onefile --name MatrixDesktop app.py
+Local .exe Build (via script)
+The project includes build.bat script for Windows.
+
+Steps:
+
+Double-click build.bat or run in terminal:
+
+cmd
+build.bat
+The executable will be in dist/MatrixDesktop.exe.
+
+RUN.exe, Icon and Shortcut
+The build.bat script additionally:
+
+converts assets/calc.png to assets/calc.ico (if PNG exists),
+
+builds application with icon,
+
+copies executable to project root as RUN.exe,
+
+creates MatrixDesktop.lnk shortcut on desktop (target - RUN.exe).
+
+If you want to use your own icon, replace assets/calc.png with desired PNG file 256×256.
+
+RUN.exe Signing (Optional)
+For code signing, set environment variables before running build.bat:
+
+cmd
+set SIGN_PFX=C:\path\to\cert.pfx
+set SIGN_PWD=your_password
+build.bat
+Requirements:
+
+signtool (Windows SDK) installed in PATH;
+
+valid .pfx certificate.
+
+
+
 # Matrix Desktop
 
 Красивое настольное приложение на Tkinter для расчётов с матрицами: сложение, вычитание, умножение, транспонирование, детерминант, ранг, обратная матрица и решение системы линейных уравнений Ax=b. Поддерживаются светлая/тёмная темы, горячие клавиши и удобный ввод.
