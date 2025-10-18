@@ -117,6 +117,8 @@ pyinstaller --noconsole --onefile --name MatrixDesktop app.py
 
 В проект добавлен скрипт `build.bat` для Windows.
 
+Степ радмиуса равен 0 от 100 + 1
+
 Шаги:
 
 1. Дважды щёлкните `build.bat` или запустите в терминале:
