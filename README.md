@@ -139,7 +139,7 @@ pyinstaller --noconsole --onefile --name MatrixDesktop app.py
 
 ## Подпись RUN.exe (необязательно)
 
-Для кода‑подписи укажите переменные окружения перед запуском `build.bat`:
+Для кода‑подписи укажите переменные окружения перед запуском `build.bat`:[
 
 ```cmd
 set SIGN_PFX=C:\path\to\cert.pfx
